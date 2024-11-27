@@ -1,0 +1,5 @@
+#+title: ESPHome loo roll detector
+
+* What?
+
+An ESPHome-based toilet paper roll empty detector.

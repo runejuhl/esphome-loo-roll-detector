@@ -1,0 +1,109 @@
+---
+esphome:
+  name: looroll
+
+esp8266:
+  board: nodemcu
+
+wifi:
+  networks:
+  - ssid: !secret hotspot_ssid
+    password: !secret hotspot_psk
+    priority: 99999
+  - ssid: !secret home_ssid
+    password: !secret home_psk
+    manual_ip:
+      static_ip: 192.168.1.195
+      gateway: 192.168.1.1
+      subnet: 255.255.255.0
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "loorolls"
+    password: "sllorool"
+
+
+logger:
+  level: info
+#   # level: VERY_VERBOSE
+
+api:
+  password: ""
+
+ota:
+  platform: esphome
+  password: ""
+
+web_server:
+  port: 80
+
+i2c:
+  # sda: GPIO21
+  # scl: GPIO22
+  scan: true
+  # frequency: 400kHz
+
+binary_sensor:
+- platform: template
+  device_class: problem
+  id: toilet_paper
+  icon: mdi:paper-roll
+  name: 'Toilet paper situation?'
+
+sensor:
+- platform: tcs34725
+  glass_attenuation_factor: 1.0
+  address: 0x29
+  update_interval: 100ms
+  color_temperature:
+    name: "TCS34725 Color Temperature"
+    internal: true
+    filters:
+    - sliding_window_moving_average:
+        window_size: 100
+        send_every: 25
+        send_first_at: 25
+    - lambda: |-
+        static bool initial_run = true;
+        static bool problem = false;
+
+        if (initial_run) {
+          ESP_LOGE("main", "setting initial state: %d", problem);
+          initial_run = false;
+          id(toilet_paper).publish_state(problem);
+          return x;
+        }
+
+        if (x >= 5000) {
+          ESP_LOGE("main", "got crazy color temperature: %f", x);
+          return {};
+        }
+
+        if (x < 3100.0) {
+          if (!problem) {
+            ESP_LOGW("main", "Houston, we have a problem! Color temperature below 3100: %f!!!11", x);
+            problem = true;
+            id(toilet_paper).publish_state(problem);
+            return x;
+          }
+        } else {
+          if (problem) {
+            ESP_LOGI("main", "Seems like we're good on paper... the temperature is %f", x);
+            problem = false;
+            id(toilet_paper).publish_state(problem);
+            return x;
+          }
+        }
+
+        return x;
+
+time:
+- platform: homeassistant
+  on_time:
+  # Every 5 minutes
+  - seconds: 0
+    minutes: /5
+    then:
+    - lambda: |-
+        ESP_LOGI("main", "keeping sensor alive...");
+        id(toilet_paper).publish_state(id(toilet_paper).state);
